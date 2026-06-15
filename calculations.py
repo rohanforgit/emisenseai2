@@ -28,7 +28,7 @@ def simulate_amortization(principal, annual_rate, tenure_months,
     - Recurring annual prepayments (applied every 12 months)
     - A one-time lump-sum prepayment (applied at a specific month)
     
-    Returns a list of monthly stats.
+    Returns a dictionary with lists of interest, principal, balance, and cumulative metrics.
     """
     base_emi = calculate_emi(principal, annual_rate, tenure_months)
     r = (annual_rate / 12.0) / 100.0
@@ -41,10 +41,12 @@ def simulate_amortization(principal, annual_rate, tenure_months,
     total_payment = 0.0
     
     month = 1
-    max_months = 600  # 50 years safety limit
+    # Safety limit to prevent infinite loops if EMI is too low to cover interest
+    max_months = 600 # 50 years max
     
     if r > 0 and base_emi <= balance * r:
-        # Prevent infinite loop if EMI is smaller than monthly interest
+        # If EMI doesn't cover interest, force a higher minimum EMI or return warning
+        # But here we simulate what we can. Let's make sure it doesn't loop infinitely.
         base_emi = balance * r + 1.0
         
     while balance > 0.01 and month <= max_months:
@@ -118,7 +120,7 @@ def calculate_base_loan_details(principal, annual_rate, tenure_months, start_dat
     actual_tenure = len(schedule)
     
     interest_percentage = (total_interest / total_payment * 100.0) if total_payment > 0 else 0.0
-    debt_free_date = start_date + timedelta(days=actual_tenure * 30.4375)
+    debt_free_date = start_date + timedelta(days=actual_tenure * 30.4375) # average days per month
     
     return {
         "emi": emi,
@@ -133,6 +135,7 @@ def calculate_base_loan_details(principal, annual_rate, tenure_months, start_dat
 def simulate_emi_increase(principal, annual_rate, tenure_months, increase_percent):
     """
     Simulates scaling the standard EMI by a percentage.
+    Calculates: New EMI, New Tenure, Interest Saved, Money Saved, Years Saved.
     """
     base = calculate_base_loan_details(principal, annual_rate, tenure_months)
     base_emi = base["emi"]
@@ -140,6 +143,7 @@ def simulate_emi_increase(principal, annual_rate, tenure_months, increase_percen
     new_emi = base_emi * (1.0 + increase_percent / 100.0)
     extra_monthly = new_emi - base_emi
     
+    # Run simulation with extra_monthly
     schedule = simulate_amortization(principal, annual_rate, tenure_months, extra_monthly=extra_monthly)
     
     new_total_interest = sum(m["interest"] for m in schedule)
@@ -185,11 +189,15 @@ def simulate_annual_prepayment(principal, annual_rate, tenure_months, annual_pre
 
 def simulate_lump_sum(principal, annual_rate, tenure_months, lump_sum_amount, mode="reduce_tenure"):
     """
-    Simulates a one-time lump sum payment at month 1.
+    Simulates a one-time lump sum payment.
+    Modes:
+      - "reduce_tenure": Keep EMI same, reduce tenure.
+      - "reduce_emi": Keep tenure same, reduce EMI.
     """
     base = calculate_base_loan_details(principal, annual_rate, tenure_months)
     
     if mode == "reduce_tenure":
+        # Simply run with lump_sum at month 1
         schedule = simulate_amortization(principal, annual_rate, tenure_months, lump_sum=lump_sum_amount, lump_sum_month=1)
         new_total_interest = sum(m["interest"] for m in schedule)
         new_total_payment = sum(m["total_payment"] for m in schedule)
@@ -212,8 +220,12 @@ def simulate_lump_sum(principal, annual_rate, tenure_months, lump_sum_amount, mo
     else: # reduce_emi
         reduced_principal = max(0.0, principal - lump_sum_amount)
         new_emi = calculate_emi(reduced_principal, annual_rate, tenure_months)
+        
+        # Simulate with the new lower principal from month 0 and new emi
+        # Equivalent to running amortization with reduced principal
         schedule = simulate_amortization(reduced_principal, annual_rate, tenure_months)
         
+        # Add the lump sum payment to the initial payment stats for correct savings
         new_total_interest = sum(m["interest"] for m in schedule)
         new_total_payment = sum(m["total_payment"] for m in schedule) + lump_sum_amount
         new_tenure = len(schedule)
@@ -235,9 +247,9 @@ def simulate_lump_sum(principal, annual_rate, tenure_months, lump_sum_amount, mo
 
 def simulate_interest_rate_comparison(principal, tenure_months, current_rate):
     """
-    Compares rate options from 7.0% to 12.0% against the current rate.
+    Compares standard rates from 7.0% to 10.0% (in 0.5% increments) against the current rate.
     """
-    rates = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0]
+    rates = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0]
     if current_rate not in rates:
         rates.append(current_rate)
     rates = sorted(list(set(rates)))
@@ -249,7 +261,7 @@ def simulate_interest_rate_comparison(principal, tenure_months, current_rate):
         details = calculate_base_loan_details(principal, rate, tenure_months)
         emi_diff = details["emi"] - base["emi"]
         interest_diff = details["total_interest"] - base["total_interest"]
-        savings = -interest_diff
+        savings = -interest_diff # if positive, it means savings. If negative, it means cost.
         
         comparison.append({
             "rate": rate,
@@ -265,7 +277,7 @@ def simulate_interest_rate_comparison(principal, tenure_months, current_rate):
 
 def calculate_refinancing(principal, current_rate, remaining_tenure_months, new_rate, refinancing_cost):
     """
-    Analyzes refinancing feasibility.
+    Analyzes refinancing viability.
     """
     base = calculate_base_loan_details(principal, current_rate, remaining_tenure_months)
     new_loan = calculate_base_loan_details(principal, new_rate, remaining_tenure_months)
@@ -293,28 +305,28 @@ def calculate_refinancing(principal, current_rate, remaining_tenure_months, new_
 
 def calculate_emi_to_income(monthly_emi, monthly_income):
     """
-    Calculates Debt Ratio (EMI / Income) and classifies the risk.
+    Calculates EMI-to-Income ratio and returning category.
     """
     if monthly_income <= 0:
-        return 0.0, "Dangerous", "Invalid monthly income input."
+        return 0.0, "Dangerous", "Invalid Income"
         
     ratio = (monthly_emi / monthly_income) * 100.0
     
     if ratio < 20.0:
         category = "Excellent"
-        advice = "Your debt load is very healthy. You have significant financial freedom."
+        advice = "Your debt load is very healthy. You have significant buffer for savings and investments."
     elif ratio < 30.0:
         category = "Good"
-        advice = "Your debt load is manageable. Recommended to keep it under 30%."
+        advice = "Your debt load is manageable. Normal for home and personal financing. Try to keep it below 30%."
     elif ratio < 40.0:
-        category = "Average"
-        advice = "You are spending a significant portion of income on debt. Avoid any new loans."
+        category = "Moderate"
+        advice = "You are spending a significant portion of your income on debt. Avoid taking any new loans."
     elif ratio < 50.0:
-        category = "Poor"
-        advice = "Debt payments consume nearly half your income. Consider urgent optimization."
+        category = "Risky"
+        advice = "Debt payments consume nearly half your income. Consider prepayment or refinancing immediately to reduce EMI."
     else:
-        category = "Danger"
-        advice = "DANGER! Debt payments exceed 50% of income. High risk of financial distress."
+        category = "Dangerous"
+        advice = "DANGER! Debt payments exceed 50% of income. You are at high risk of financial distress. Reprioritize expenses immediately."
         
     return round(ratio, 2), category, advice
 
@@ -328,17 +340,18 @@ def calculate_emergency_fund(monthly_expenses, monthly_emi, current_reserve):
     fund_6m = monthly_outflow * 6
     fund_12m = monthly_outflow * 12
     
+    # Recommended reserve is 6 months
     recommended = fund_6m
     gap = recommended - current_reserve
     
     if current_reserve >= fund_12m:
-        advice = "Superb! You have over 12 months of runway. You can aggressively prepay loans."
+        advice = "Superb! You have over 12 months of runway. You can safely allocate some cash towards prepaying your loans."
     elif current_reserve >= fund_6m:
-        advice = "Excellent. Solid 6-month buffer. You are well-positioned to make prepayments."
+        advice = "Excellent. You have a solid 6-month buffer. You are well-positioned to make prepayments with any additional cash flows."
     elif current_reserve >= fund_3m:
-        advice = "Adequate. 3-month buffer. Grow it to 6 months before aggressively prepaying low-rate debt."
+        advice = "Adequate. You have a 3-month buffer. While stable, it's safer to grow it to 6 months before aggressively prepaying low-interest debt."
     else:
-        advice = "Warning! Reserves below 3-month threshold. Focus on savings first."
+        advice = "Warning! Your reserves are below the 3-month threshold. Focus on building your emergency savings before making any extra loan prepayments."
         
     return {
         "monthly_outflow": round(monthly_outflow, 2),
@@ -352,77 +365,83 @@ def calculate_emergency_fund(monthly_expenses, monthly_emi, current_reserve):
     }
 
 def calculate_health_score(principal, annual_rate, tenure_months, emi, income, 
-                            expenses, current_reserve, extra_monthly, loan_type):
+                           expenses, current_reserve, extra_monthly, loan_type):
     """
-    Computes a loan health score (0-100) based on weighted factors:
-    - Interest rate burden relative to benchmark (25%)
-    - EMI burden (EMI-to-Income) (25%)
-    - Emergency savings buffer (20%)
-    - Tenure length risk (15%)
-    - Active prepayment allocation (15%)
+    Computes a loan health score between 0 and 100 based on weighted metrics:
+    1. Interest Rate Burden (25%)
+    2. EMI-to-Income ratio (25%)
+    3. Emergency Fund Gap (20%)
+    4. Tenure Risk (15%)
+    5. Prepayment Capacity (15%)
     """
     score = 100.0
     deductions = []
     
+    # 1. Interest Rate (Compare to benchmark for loan types)
+    # Lower benchmarks are safer.
     benchmarks = {
         "Home Loan": 8.0,
         "Car Loan": 9.0,
         "Bike Loan": 10.0,
-        "Education Loan": 9.0,
-        "Personal Loan": 11.5,
-        "Business Loan": 10.5,
-        "Gold Loan": 8.5,
+        "Education Loan": 9.5,
+        "Personal Loan": 12.0,
+        "Business Loan": 11.0,
+        "Gold Loan": 9.0,
         "Custom Loan": 9.5
     }
-    
     benchmark = benchmarks.get(loan_type, 9.5)
     rate_diff = annual_rate - benchmark
     if rate_diff > 0:
-        penalty = min(25.0, rate_diff * 4)
+        penalty = min(25.0, rate_diff * 4) # 4 points per 1% above benchmark
         score -= penalty
-        deductions.append(f"Interest rate of {annual_rate}% is above benchmark for {loan_type} ({benchmark}%). (-{round(penalty, 1)} pts)")
+        deductions.append(f"Interest rate is {annual_rate}% which is above the benchmark for {loan_type} ({benchmark}%). (-{round(penalty, 1)} pts)")
         
+    # 2. EMI-to-Income (Goal < 30%)
     ratio = (emi / income * 100.0) if income > 0 else 100.0
     if ratio >= 50.0:
         score -= 25.0
-        deductions.append(f"Critical: EMI consumes {round(ratio, 1)}% of monthly income. (-25 pts)")
+        deductions.append(f"EMI consumes {round(ratio, 1)}% of income (Critical threshold >50%). (-25 pts)")
     elif ratio >= 40.0:
         score -= 20.0
-        deductions.append(f"High risk: EMI consumes {round(ratio, 1)}% of income. (-20 pts)")
+        deductions.append(f"EMI consumes {round(ratio, 1)}% of income (Risky 40-50%). (-20 pts)")
     elif ratio >= 30.0:
         score -= 12.0
-        deductions.append(f"Moderate risk: EMI consumes {round(ratio, 1)}% of income. (-12 pts)")
+        deductions.append(f"EMI consumes {round(ratio, 1)}% of income (Moderate 30-40%). (-12 pts)")
     elif ratio >= 20.0:
         score -= 5.0
-        deductions.append(f"Low risk: EMI consumes {round(ratio, 1)}% of income. (-5 pts)")
+        deductions.append(f"EMI consumes {round(ratio, 1)}% of income (Good 20-30%). (-5 pts)")
         
+    # 3. Emergency Fund Gap (Goal: current_reserve >= 6 * (expenses + emi))
     monthly_outflow = expenses + emi
     recommended_reserve = monthly_outflow * 6
     if recommended_reserve > 0:
         coverage = current_reserve / recommended_reserve
         if coverage < 0.2:
             score -= 20.0
-            deductions.append("Critical: Emergency fund covers under 20% of required buffer. (-20 pts)")
+            deductions.append("Critical: Emergency fund covers less than 20% of the recommended 6-month buffer. (-20 pts)")
         elif coverage < 0.5:
             score -= 15.0
-            deductions.append("Warning: Emergency fund covers under 50% of required buffer. (-15 pts)")
+            deductions.append("Warning: Emergency fund covers less than 50% of the recommended 6-month buffer. (-15 pts)")
         elif coverage < 1.0:
             score -= 8.0
             deductions.append("Moderate: Emergency fund is below the recommended 6-month buffer. (-8 pts)")
             
-    if tenure_months > 240:
+    # 4. Tenure Risk (Longer loans accrue more interest)
+    if tenure_months > 240: # > 20 years
         score -= 15.0
-        deductions.append(f"High tenure of {tenure_months} months increases compound interest paid. (-15 pts)")
-    elif tenure_months > 120:
+        deductions.append(f"High Tenure: Loan tenure of {tenure_months} months (>20 years) increases total interest burden. (-15 pts)")
+    elif tenure_months > 120: # 10 to 20 years
         score -= 8.0
-        deductions.append(f"Moderate tenure of {tenure_months} months. (-8 pts)")
+        deductions.append(f"Moderate Tenure: Loan tenure of {tenure_months} months (10-20 years). (-8 pts)")
         
+    # 5. Prepayment Capacity (Can user afford to pay more?)
+    # If budget is 0, they can't optimize, which is a risk.
     if extra_monthly <= 0:
         score -= 15.0
-        deductions.append("No active monthly prepayment budget allocated. (-15 pts)")
-    elif extra_monthly < emi * 0.05:
+        deductions.append("No extra monthly budget allocated for prepayments, limiting optimization options. (-15 pts)")
+    elif extra_monthly < emi * 0.05: # less than 5% of EMI
         score -= 8.0
-        deductions.append("Low monthly prepayment buffer relative to loan size. (-8 pts)")
+        deductions.append(f"Low prepayment capacity ({round(extra_monthly, 2)} is <5% of EMI). (-8 pts)")
         
     score = max(0.0, min(100.0, score))
     
@@ -440,30 +459,29 @@ def calculate_health_score(principal, annual_rate, tenure_months, emi, income,
     return round(score, 0), status, deductions
 
 def simulate_what_if_analysis(principal, annual_rate, tenure_months, income, expenses, current_reserve,
-                               extra_monthly, risk_appetite, investments, inflation, age, retirement_age, salary_growth):
+                               extra_monthly, risk_appetite, investments, inflation, age, retirement_age):
     """
-    Simulates advanced what-if events and calculates their financial impact:
-    - Higher Salary (+ salary_growth% income -> increases extra monthly budget)
-    - Lower Salary (-15% income -> decreases extra budget)
-    - Job Loss (Income = 0 for 6 months -> emergency fund drains)
-    - Interest Rate Increase (+2% interest rate)
-    - Interest Rate Decrease (-2% interest rate)
-    - Marriage / Family Expansion (+30% expenses -> decreases extra budget)
-    - Prepay vs Invest: Compares prepaying with extra_monthly vs compounding it in investments.
+    Simulates advanced what-if events and calculates their financial impact on the loan:
+    1. Higher Salary (+15% income -> increases extra monthly budget)
+    2. Lower Salary (-15% income -> decreases extra monthly budget)
+    3. Job Loss (Income = 0 for 6 months -> emergency fund drains, EMIs still need to be paid)
+    4. Interest Rate Increase (+2% interest rate)
+    5. Interest Rate Decrease (-2% interest rate)
+    6. Marriage / Family Expansion (+30% expenses -> decreases extra budget)
+    7. Prepay vs Invest (Compare prepaying with extra_monthly vs investing it at expected return based on risk)
     """
     base = calculate_base_loan_details(principal, annual_rate, tenure_months)
     base_emi = base["emi"]
     
-    # 1. Higher Salary using actual user expected salary growth
-    growth_factor = 1.0 + (salary_growth / 100.0)
-    new_inc_high = income * growth_factor
+    # 1. Higher Salary
+    new_inc_high = income * 1.15
     added_budget = new_inc_high - income
     new_extra_monthly_high = extra_monthly + added_budget
     sim_high_sal = simulate_amortization(principal, annual_rate, tenure_months, extra_monthly=new_extra_monthly_high)
     high_sal_interest = sum(m["interest"] for m in sim_high_sal)
     high_sal_months = len(sim_high_sal)
     
-    # 2. Lower Salary (-15%)
+    # 2. Lower Salary
     new_inc_low = income * 0.85
     subtracted_budget = income - new_inc_low
     new_extra_monthly_low = max(0.0, extra_monthly - subtracted_budget)
@@ -472,16 +490,17 @@ def simulate_what_if_analysis(principal, annual_rate, tenure_months, income, exp
     low_sal_months = len(sim_low_sal)
     
     # 3. Job Loss
+    # We check if Emergency Fund covers 6 months of outflow (expenses + EMI)
     monthly_outflow = expenses + base_emi
     cost_for_6_months = monthly_outflow * 6.0
     
-    # 4. Interest Rate Increase (+2%)
+    # 4. Interest Rate Increase (+2.0%)
     sim_rate_high = calculate_base_loan_details(principal, annual_rate + 2.0, tenure_months)
     
-    # 5. Interest Rate Decrease (-2%)
+    # 5. Interest Rate Decrease (-2.0%)
     sim_rate_low = calculate_base_loan_details(principal, max(1.0, annual_rate - 2.0), tenure_months)
     
-    # 6. Marriage (+30% expenses)
+    # 6. Marriage / Child
     new_exp_family = expenses * 1.30
     family_extra_budget = max(0.0, extra_monthly - (new_exp_family - expenses))
     sim_family = simulate_amortization(principal, annual_rate, tenure_months, extra_monthly=family_extra_budget)
@@ -489,6 +508,7 @@ def simulate_what_if_analysis(principal, annual_rate, tenure_months, income, exp
     family_months = len(sim_family)
     
     # 7. Prepay vs Invest
+    # Risk appetite determines expected investment returns: Conservative (7%), Moderate (10%), Aggressive (13%)
     expected_returns = {
         "Conservative": 7.0,
         "Moderate": 10.0,
@@ -496,37 +516,43 @@ def simulate_what_if_analysis(principal, annual_rate, tenure_months, income, exp
     }
     return_rate = expected_returns.get(risk_appetite, 10.0)
     
-    # Prepay loan simulation with extra_monthly
+    # Compare:
+    # Option A: Prepay loan with extra_monthly (saves interest, reduces tenure)
     prepay_sim = simulate_amortization(principal, annual_rate, tenure_months, extra_monthly=extra_monthly)
     prepay_interest_paid = sum(m["interest"] for m in prepay_sim)
     prepay_months = len(prepay_sim)
     
-    # Compound investment simulation with inflation adjustment
-    real_return_rate = return_rate - inflation
-    r_inv_real = (max(1.0, real_return_rate) / 12.0) / 100.0
+    # Option B: Maintain baseline loan (pay base EMI), and invest extra_monthly in a compound account
+    # We compound monthly: A = P_monthly * [ (1 + r_inv)^N - 1 ] / r_inv
+    r_inv = (return_rate / 12.0) / 100.0
     total_months_to_compare = base["actual_tenure_months"]
     
     invested_value = 0.0
     total_invested_capital = 0.0
-    for _ in range(total_months_to_compare):
-        invested_value = (invested_value + extra_monthly) * (1.0 + r_inv_real)
+    for m in range(total_months_to_compare):
+        invested_value = (invested_value + extra_monthly) * (1.0 + r_inv)
         total_invested_capital += extra_monthly
         
     investment_profit = invested_value - total_invested_capital
-    interest_saved_by_prepaying = base["total_interest"] - prepay_interest_paid
     
+    # Financial benefit of prepaying:
+    # Baseline interest paid minus Prepay interest paid
+    interest_saved_by_prepaying = base["total_interest"] - prepay_interest_paid
+    # Also, we free up the EMI payment early!
+    # If prepaying makes us debt free in K months, for the remaining (N - K) months, we can invest the full (base_emi + extra_monthly)
     full_investment_value = 0.0
     if prepay_months < total_months_to_compare:
         months_freed = total_months_to_compare - prepay_months
-        for _ in range(months_freed):
-            full_investment_value = (full_investment_value + base_emi + extra_monthly) * (1.0 + r_inv_real)
+        for m in range(months_freed):
+            full_investment_value = (full_investment_value + base_emi + extra_monthly) * (1.0 + r_inv)
             
     total_value_prepay_strategy = invested_value + interest_saved_by_prepaying if prepay_months >= total_months_to_compare else full_investment_value + interest_saved_by_prepaying
     
+    # Simple advice
     if return_rate > annual_rate:
-        prepay_vs_invest_advice = f"Investing extra funds yields an expected {return_rate}% return ({real_return_rate:.1f}% inflation-adjusted), outperforming your {annual_rate}% loan rate. However, prepaying guarantees a risk-free savings equivalent to {annual_rate}% interest, shaving off {round((base['actual_tenure_months']-prepay_months)/12, 1)} years."
+        prepay_vs_invest_advice = f"Investing extra money at {return_rate}% expected return yields higher growth than prepaying a {annual_rate}% loan. However, prepaying gives a guaranteed return and makes you debt-free {round((base['actual_tenure_months']-prepay_months)/12, 1)} years earlier."
     else:
-        prepay_vs_invest_advice = f"Prepaying your {annual_rate}% loan guarantees a higher savings than the expected {return_rate}% return from investments. Pay off the loan first."
+        prepay_vs_invest_advice = f"Prepaying your loan at {annual_rate}% guarantees a return higher than the {return_rate}% expected investment return. Focus on debt payoff first."
         
     return {
         "higher_salary": {
@@ -571,12 +597,20 @@ def simulate_what_if_analysis(principal, annual_rate, tenure_months, income, exp
 
 def get_loan_specific_features(loan_type, principal, annual_rate, tenure_months, base_emi):
     """
-    Returns custom calculators, tips, and guidelines per loan type.
+    Returns specific calculations and alerts for each loan type.
     """
     results = {}
     
     if loan_type == "Home Loan":
-        results["advice"] = "💡 **Tax Benefits (e.g., Section 24b / 80C):** Deduct up to ₹2L on interest and ₹1.5L on principal. Consider refinancing or balance transfer if current market rates are >0.5% lower."
+        # Indian standard context: Tax deduction under Section 24b up to 2,00,000 INR
+        # For general, write standard deduction message.
+        tax_limit = 200000
+        interest_deduction_val = min(tax_limit, base_emi * 12 * 0.5) # approximate yearly interest
+        results["tax_deduction_estimate"] = round(interest_deduction_val, 2)
+        results["advice"] = "For Home Loans, you can save taxes under local sections (e.g. Section 24b). Making one extra EMI payment every year speeds up debt payoff dramatically."
+        
+        # Home Loan Special: 1 extra EMI payment per year
+        # An extra EMI payment means prepaying 'base_emi' once every 12 months
         special_sim = simulate_amortization(principal, annual_rate, tenure_months, annual_prepayment=base_emi)
         base = calculate_base_loan_details(principal, annual_rate, tenure_months)
         new_tenure = len(special_sim)
@@ -590,38 +624,39 @@ def get_loan_specific_features(loan_type, principal, annual_rate, tenure_months,
         }
         
     elif loan_type == "Car Loan":
+        # Vehicle depreciation: approx 15% per year
         car_val = principal
         value_timeline = []
-        years = int(math.ceil(tenure_months / 12.0))
-        for year in range(1, years + 1):
+        for year in range(1, int(math.ceil(tenure_months / 12.0)) + 1):
             car_val = car_val * 0.85
             value_timeline.append((year, round(car_val, 2)))
         results["depreciation_timeline"] = value_timeline
-        results["advice"] = "⚠️ **Depreciation Risk:** Vehicles lose ~15% value annually. Ensure your remaining principal stays below the vehicle value to avoid negative equity."
+        results["advice"] = "Cars deprecate rapidly (~15% annually). Aim to prepay early to avoid becoming 'underwater' where you owe more than the car is worth."
         
     elif loan_type == "Bike Loan":
-        results["advice"] = "⚡ **Fast Payoff Strategy:** Bike loans usually carry double-digit interest. Adding ₹1,000 monthly or making small prepayment bursts pays off the loan in half the time."
+        results["advice"] = "Bike loans have shorter tenures but slightly higher rates. Pay this off quickly by increasing EMI by 10-15% to clear high interest costs."
         
     elif loan_type == "Education Loan":
-        results["advice"] = "🎓 **Moratorium Optimization:** Education loans feature moratorium periods (studies + grace). Paying off accruing interest monthly during college avoids capitalization into the principal."
+        results["advice"] = "Education loans usually have moratorium benefits (no payments during studies). Try to pay interest during college to avoid compounding interest buildup."
         
     elif loan_type == "Personal Loan":
-        results["advice"] = "🚨 **Consolidation Alert:** Personal loans have interest rates ranging from 12% to 24%. Consolidating multiple lines into a single lower-interest asset-backed loan is highly recommended."
+        results["advice"] = "Personal loans carry high rates (12-20%). Prepay as fast as possible. If you have multiple loans, consolidate them into a single low-rate loan."
         
     elif loan_type == "Business Loan":
-        results["advice"] = "📈 **ROI Evaluation:** Ensure business returns (operating ROI) exceed the loan cost. If loan interest is 11% and business capital ROI is 15%, reinvesting profits is more lucrative than prepaying."
+        # ROI suggestions
+        results["advice"] = "Verify if business expansion returns (ROI) exceed the loan interest rate. If business ROI is 15% and loan is 11%, reinvesting capital is better than prepaying."
         
     elif loan_type == "Gold Loan":
-        results["advice"] = "🪙 **LTV Margin Call Risk:** Gold loans are quick but tied to gold prices. A steep drop in gold market prices will trigger a Margin Call, requiring immediate principal paydowns."
+        results["advice"] = "Gold loans are asset-backed and have lower rates. However, watch the Loan-to-Value (LTV) ratio. If gold prices fall, lenders may demand immediate margins."
         
     else:
-        results["advice"] = "💡 Custom loan parameters. Review prepayment clauses and interest-saving options periodically."
+        results["advice"] = "Custom Loan. Check local tax incentives, prepay terms, and refinancing opportunities."
         
     return results
 
 def get_financial_milestones(age, retirement_age, current_tenure_months, optimized_tenure_months):
     """
-    Computes milestones for loan duration.
+    Computes and displays milestones for loan duration.
     """
     current_tenure_years = current_tenure_months / 12.0
     optimized_tenure_years = optimized_tenure_months / 12.0
@@ -633,9 +668,9 @@ def get_financial_milestones(age, retirement_age, current_tenure_months, optimiz
     retirement_gap_opt = retirement_age - debt_free_age
     
     if debt_free_age < retirement_age:
-        advice = f"Fantastic! You will be debt-free at age {round(debt_free_age, 1)}, which is {round(retirement_gap_opt, 1)} years before retirement. This gives you extra time to build investments."
+        advice = f"Fantastic! You will be debt-free at {round(debt_free_age, 1)}, which is {round(retirement_gap_opt, 1)} years before retirement. This allows you to redirect your EMI money towards retirement investments."
     else:
-        advice = f"Warning: Your debt timeline extends to age {round(debt_free_age, 1)}, which is past retirement ({retirement_age}). We recommend optimizing your schedule to finish earlier."
+        advice = f"Warning: Your debt outstanding runs until age {round(debt_free_age, 1)}, which is after your retirement age of {retirement_age}. Try optimizing your loan to finish payments before retiring."
         
     return {
         "current_age": age,
@@ -652,37 +687,42 @@ def generate_smart_alerts(principal, annual_rate, tenure_months, emi, income, ex
     """
     alerts = []
     
+    # 1. High EMI Burden
     ratio = (emi / income * 100.0) if income > 0 else 100.0
     if ratio > 40.0:
         alerts.append({
             "type": "danger",
-            "message": f"Debt ratio warning: Your EMI consumes {round(ratio, 1)}% of net monthly income (Recommended limit: <30%)."
+            "message": f"High Debt Burden: Your EMIs consume {round(ratio, 1)}% of your monthly income. Maintain a ratio below 30%."
         })
         
+    # 2. Insufficient Emergency Fund
     monthly_outflow = expenses + emi
     six_month_fund = monthly_outflow * 6.0
     if current_reserve < six_month_fund:
         alerts.append({
             "type": "warning",
-            "message": f"Emergency fund alert: Your reserve of {current_reserve:,.0f} is below the 6-month safety buffer of {six_month_fund:,.0f}."
+            "message": f"Critical Reserve Gap: Your emergency reserve is ₹{round(current_reserve, 2)}, which is below the recommended 6-month buffer of ₹{round(six_month_fund, 2)}."
         })
         
+    # 3. High Interest Rate Alert
     if annual_rate > 11.5:
         alerts.append({
             "type": "warning",
-            "message": f"High interest rate alert: {annual_rate}% is high. Consider refinancing or balance transfer."
+            "message": f"High Interest Rate Alert: Your rate of {annual_rate}% is high. Check refinancing options or focus on rapid prepayment."
         })
         
-    if tenure_months > 180:
+    # 4. Long Tenure Alert
+    if tenure_months > 180: # 15 years
         alerts.append({
             "type": "info",
-            "message": f"Long loan tenure alert: {tenure_months} months means substantial interest accrual. Prepayments will yield huge savings."
+            "message": f"Long-Term Interest Trapping: A {tenure_months}-month tenure means you will pay substantial interest. Prepay to reduce tenure."
         })
         
+    # 5. Opportunity alerts
     if current_reserve > six_month_fund * 1.5:
         alerts.append({
             "type": "success",
-            "message": "Good prepayment opportunity: You have excess emergency reserves. You can safely execute a lump-sum payment."
+            "message": "Prepayment Opportunity: You have excess emergency cash. Consider a one-time lump sum payment to reduce your tenure."
         })
         
     return alerts

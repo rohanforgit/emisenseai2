@@ -1,49 +1,99 @@
-# EMI Sense AI – AI-Powered Loan Optimization Platform
+---
+title: EMI Sense AI
+emoji: 💡
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 4.36.1
+app_file: app.py
+pinned: false
+license: apache-2.0
+python_version: "3.10"
+---
 
-Traditional financial calculators tell you your EMI. **EMI Sense AI** helps you optimize your debt structure, minimize cumulative interest, and accelerate your path to absolute debt freedom.
+# EMI Sense AI
 
-## Core Features
-*   **Advisory Overview Dashboard:** Custom KPIs showing base EMI, total interest, total payment, loan health, and years to debt free.
-*   **What-If Scenarios Simulation:** Model financial fluctuations (job loss, income growth, rate hikes) and compare investing extra funds vs. prepaying loan principal.
-*   **Modular Acceleration Tools:** Simulate EMI increases, recurring annual prepayments, or immediate lump-sum contributions.
-*   **Interactive Visualizations:** Plotly amortization curves, debt-free milestone lines, and health indicators.
-*   **Professional PDF Export:** Clean ReportLab reports capturing baseline metrics, optimization tables, health scores, and AI recommendations.
-*   **AI Coach:** Powered by OpenAI and Gemini (`gemini-2.5-flash` default) to dynamically critique and guide your debt payoff strategy.
+> **"Don't just calculate your loan. Optimize it."**
 
-## Tech Stack
-*   **Frontend:** Streamlit
-*   **Data Analysis:** Pandas, NumPy
-*   **Visualizations:** Plotly, Matplotlib
-*   **PDF Compiler:** ReportLab
-*   **LLM integration:** OpenAI SDK
+EMI Sense AI is a premium, AI-powered loan optimization dashboard designed to act like a personal financial advisor. Rather than just computing standard monthly payments and interest costs, it evaluates your complete financial profile, models dynamic prepayment/refinancing optimizations, computes a Loan Health Index score, and provides structured strategic recommendations using LLM engines.
 
 ---
 
-## Local Setup & Run
+## 🌟 Key Features
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/rohanforgit/emisenseai2.git
-    cd emisenseai2
-    ```
+1. **📊 Advisor Diagnostics & Health Index:**
+   * Computes a weighted Loan Health Score (0-100) analyzing debt levels, income ratio, rates, and cash buffers.
+   * Compiles smart risk alerts for high-interest rates, low reserves, or heavy payment ratios.
+2. **⚡ Real-time Prepayment Simulators:**
+   * **EMI Increase Simulator:** Model the visual impact of increasing your monthly payment.
+   * **One-time Lump Sum Simulator:** Run tenure-reduction calculations.
+   * **Annual Prepayment Simulator:** Evaluate regular extra yearly prepayments.
+   * **Refinance/Balance Transfer Analyzer:** Check break-even milestones and net savings.
+3. **🔍 Risk & Strategic Analyses:**
+   * Debt-to-Income runway calculators.
+   * Payoff milestones mapped against your demographic retirement goals.
+   * Advanced What-If Scenario Matrix (income shocks, salary hikes, or rate shifts).
+   * Prepay vs. Investment Growth trade-off profiles.
+   * Side-by-side comparative calculators.
+4. **📈 Interactive Charts:**
+   * 6 dynamic Plotly schedules including Outstanding Principal timelines, Cumulative Interest, EMI Composition, and Debt-Free milestone charts.
+5. **📄 PDF Executive Reports:**
+   * Generate and export high-fidelity PDF reports detailing key diagnostic insights, prepay guidelines, and AI suggestions.
+6. **💬 AI Loan Coach Chat Room:**
+   * Chat in real-time with an AI Financial Coach regarding loan strategies (supports Groq, HuggingFace, and OpenAI).
 
-2.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+---
 
-3.  **Set Up API Key:**
-    Create a `.env` file in the root directory:
-    ```env
-    GEMINI_API_KEY=your_gemini_api_key
-    ```
+## 🛠️ Tech Stack
 
-4.  **Run Application:**
-    ```bash
-    streamlit run app.py
-    ```
+* **Frontend:** Gradio
+* **Backend Calculations:** Python Financial Formulas
+* **Charts:** Plotly / Matplotlib
+* **PDF Exporter:** ReportLab
+* **LLM Engine:** OpenAI Client (supporting Groq, OpenAI, and HuggingFace API endpoints)
 
-5.  **Run Tests:**
-    ```bash
-    python3 test_calculations.py
-    ```
+---
+
+## 📁 Repository Structure
+
+* `app.py`: Main Gradio dashboard entry point, interface layouts, and UI callbacks.
+* `calculations.py`: Core mathematical engines (amortization schedules, what-if simulators, loan health score, runway budgets).
+* `charts.py`: Generation functions for Plotly interactive plots.
+* `ai_engine.py`: Structured prompt formatting, fallback rule-based models, and LLM integrations.
+* `pdf_generator.py`: PDF report styling, document flows, and export rendering.
+* `style.css`: Premium dark mode CSS stylesheet.
+* `test_calculations.py`: Suite of math correctness unit tests.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+* Python 3.8+
+* Install dependencies:
+  ```bash
+  pip install gradio pandas plotly matplotlib reportlab openai
+  ```
+
+### Setting API Keys (Optional)
+To activate the AI advisor recommendation panels and the chat room, set your API key as an environment variable before running:
+```bash
+export GROQ_API_KEY="your_groq_api_key"
+# or
+export OPENAI_API_KEY="your_openai_api_key"
+```
+
+### Running the App
+Start the Gradio server:
+```bash
+python3 app.py
+```
+Open your browser and navigate to:
+👉 **http://127.0.0.1:7860**
+
+### Running Unit Tests
+Validate calculation formulas:
+```bash
+python3 test_calculations.py
+```

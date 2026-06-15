@@ -2,70 +2,67 @@ from openai import OpenAI
 import os
 import traceback
 
-def get_ai_client(provider, api_key):
+def get_ai_client(api_key):
     """
-    Initializes the OpenAI client based on the provider.
-    Supports OpenAI (Paid) and Gemini (Free) via Google's OpenAI-compatible API endpoint.
+    Initializes the OpenAI client pointing to the Groq API endpoint.
     """
-    if provider == "Gemini (Free)":
-        key = api_key or os.environ.get("GEMINI_API_KEY")
-        if not key:
-            return None
-        try:
-            return OpenAI(api_key=key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
-        except Exception:
-            return None
-    else: # OpenAI (Paid)
-        key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not key:
-            return None
-        try:
-            return OpenAI(api_key=key)
-        except Exception:
-            return None
+    if not api_key:
+        return None
+    try:
+        return OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1"
+        )
+    except Exception:
+        return None
 
 def generate_local_fallback_advice(loan_data, base_details, sim_emi, sim_annual, sim_lump, refinance, health_score, score_status):
     """
-    Generates structured, premium financial recommendations locally using 
-    pre-calculated Python metrics when no API key is available.
+    Generates structured financial advice locally using pre-calculated values
+    when no API key is provided or when the API call fails.
     """
     currency = loan_data.get("currency", "₹")
     loan_type = loan_data.get("loan_type", "Custom Loan")
     
-    # Compile optimizations into a sorted list by interest savings
+    # Calculate top actions
     actions = []
     
+    # Action 1: EMI Increase
     if sim_emi["interest_saved"] > 0:
         actions.append({
             "title": f"Increase Monthly EMI by {loan_data.get('emi_increase_pct', 10)}%",
             "savings": sim_emi["interest_saved"],
-            "description": f"By increasing your EMI, you will complete your loan repayment {sim_emi['years_saved']} years earlier and save {currency}{sim_emi['interest_saved']:,.2f} in cumulative interest."
+            "description": f"By increasing your EMI, you will finish your loan {sim_emi['years_saved']} years early and save {currency}{sim_emi['interest_saved']:,.2f} in interest."
         })
         
+    # Action 2: Annual Prepayment
     if sim_annual["interest_saved"] > 0:
         actions.append({
-            "title": f"Deploy Annual Prepayments of {currency}{loan_data.get('annual_prepayment', 0):,.2f}",
+            "title": f"Pay {currency}{loan_data.get('annual_prepayment', 0):,.2f} Annually",
             "savings": sim_annual["interest_saved"],
-            "description": f"Making a recurring yearly prepayment reduces your tenure and cuts down interest by {currency}{sim_annual['interest_saved']:,.2f}."
+            "description": f"Making a recurring annual prepayment reduces tenure and saves {currency}{sim_annual['interest_saved']:,.2f} in interest."
         })
         
+    # Action 3: Lump Sum
     if sim_lump["interest_saved"] > 0:
         actions.append({
             "title": f"Make a One-time Lump Sum of {currency}{loan_data.get('lump_sum_amount', 0):,.2f}",
             "savings": sim_lump["interest_saved"],
-            "description": f"Prepaying this lump sum immediately reduces outstanding principal, yielding {currency}{sim_lump['interest_saved']:,.2f} in lifetime interest savings."
+            "description": f"Prepaying this lump sum immediately reduces outstanding principal and saves {currency}{sim_lump['interest_saved']:,.2f} in interest."
         })
         
+    # Action 4: Refinancing
     if refinance and refinance.get("worth_refinancing"):
         actions.append({
-            "title": f"Refinance Loan to lower interest rate of {loan_data.get('refinance_rate', 0.0)}%",
+            "title": f"Refinance Loan to {loan_data.get('refinance_rate', 0.0)}%",
             "savings": refinance["net_savings"],
-            "description": f"Refinancing your loan balance saves {currency}{refinance['net_savings']:,.2f} net of refinancing costs, breaking even in {refinance['break_even_months']} months."
+            "description": f"Transferring your balance to a lower rate saves {currency}{refinance['net_savings']:,.2f} net of refinancing costs, breaking even in {refinance['break_even_months']} months."
         })
         
     # Sort actions by savings descending
     actions = sorted(actions, key=lambda x: x["savings"], reverse=True)
     
+    # Generate Top 3 Actions markdown
     actions_md = ""
     for idx, act in enumerate(actions[:3], 1):
         actions_md += f"### {idx}. {act['title']}\n"
@@ -73,8 +70,9 @@ def generate_local_fallback_advice(loan_data, base_details, sim_emi, sim_annual,
         actions_md += f"{act['description']}\n\n"
         
     if not actions_md:
-        actions_md = "No prepayment optimizations simulation run or no savings found yet. Adjust your inputs to run simulations."
+        actions_md = "No prepayment optimizations simulation run or no savings found yet. Try adjusting your simulation inputs in the main panel."
         
+    # General Advice based on Health Score
     health_advice = ""
     if health_score >= 90:
         health_advice = "Your loan health is in a superb state. You have low interest rates and a manageable EMI burden. We recommend prioritizing low-cost investing over aggressive prepayments unless you want absolute debt freedom."
@@ -85,6 +83,7 @@ def generate_local_fallback_advice(loan_data, base_details, sim_emi, sim_annual,
     else:
         health_advice = "Your loan health is poor or dangerous. Your debt burden is very high. Focus on refinancing, cutting discretionary expenses to pay down principal, or consolidating this high-rate debt."
         
+    # Moratorium / depreciation reminders
     specific_warning = ""
     if loan_type == "Home Loan":
         specific_warning = "💡 *Home Loan Tip:* You can claim tax deductions on principal (Sec 80C) and interest (Sec 24b) payments. Make sure you optimize to utilize these limit caps."
@@ -92,11 +91,14 @@ def generate_local_fallback_advice(loan_data, base_details, sim_emi, sim_annual,
         specific_warning = f"💡 *Car Loan Warning:* Cars deprecate by roughly 15% yearly. At your current schedule, make sure your outstanding balance is not higher than the vehicle value."
         
     fallback_text = f"""
-## Executive Summary & Diagnostic
-- Your loan of **{currency}{loan_data['loan_amount']:,.2f}** at **{loan_data['interest_rate']}%** for **{loan_data['loan_tenure_months']} months** is classified as **{score_status}** (Health Score: **{health_score}/100**).
-- Interest constitutes **{base_details['interest_percentage']}%** of your total payments.
-- {health_advice}
-- {specific_warning}
+## Local Analysis (API Key not provided)
+This analysis is generated using local rule-based models. Provide your Groq API key in the sidebar to enable premium AI-powered financial advisory.
+
+### Summary Analysis
+* Your loan of **{currency}{loan_data['loan_amount']:,.2f}** at **{loan_data['interest_rate']}%** for **{loan_data['loan_tenure_months']} months** is classified as **{score_status}** (Health Score: **{health_score}/100**).
+* Interest constitutes **{base_details['interest_percentage']}%** of your total payments.
+* {health_advice}
+* {specific_warning}
 
 ---
 
@@ -106,12 +108,12 @@ def generate_local_fallback_advice(loan_data, base_details, sim_emi, sim_annual,
 """
     return fallback_text
 
-def get_ai_recommendations(loan_data, base_details, sim_emi, sim_annual, sim_lump, refinance, health_score, score_status, score_deductions, provider, api_key, model_name="gpt-4o-mini"):
+def get_ai_recommendations(loan_data, base_details, sim_emi, sim_annual, sim_lump, refinance, health_score, score_status, score_deductions, api_key, model_name="llama-3.3-70b-versatile"):
     """
-    Queries OpenAI/Gemini to generate custom, structured loan optimization recommendations.
-    Falls back to a detailed local advisory if the API key is not available.
+    Sends calculations and details to the Groq LLM to get a personalized recommendation report.
+    Fails back to local recommendations if no key is provided or if an error occurs.
     """
-    client = get_ai_client(provider, api_key)
+    client = get_ai_client(api_key)
     
     if not client:
         return generate_local_fallback_advice(
@@ -121,6 +123,7 @@ def get_ai_recommendations(loan_data, base_details, sim_emi, sim_annual, sim_lum
     currency = loan_data.get("currency", "₹")
     loan_type = loan_data.get("loan_type", "Custom Loan")
     
+    # Build a context prompt containing all calculated values
     system_prompt = """You are a premium AI financial advisor and loan optimization coach named "EMI Sense AI".
 Your tone is professional, encouraging, analytical, and highly structured.
 You help users save money by optimizing their loans using the PRE-CALCULATED Python metrics provided.
@@ -191,16 +194,17 @@ Please write a comprehensive, executive loan optimization summary. Start with a 
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"AI Provider error: {str(e)}")
-        return f"*(AI Connection Offline/Key Error - Showing local recommendations)*\n\n" + generate_local_fallback_advice(
+        error_msg = str(e)
+        print(f"AI Provider error: {error_msg}")
+        return f"*(AI Connection Offline/Key Error ({error_msg}) - Showing local recommendations)*\n\n" + generate_local_fallback_advice(
             loan_data, base_details, sim_emi, sim_annual, sim_lump, refinance, health_score, score_status
         )
 
-def chat_with_coach(chat_history, user_message, loan_data, base_details, health_score, score_status, sim_emi, sim_annual, sim_lump, provider, api_key, model_name="gpt-4o-mini"):
+def chat_with_coach(chat_history, user_message, loan_data, base_details, health_score, score_status, sim_emi, sim_annual, sim_lump, api_key, model_name="llama-3.3-70b-versatile"):
     """
     Handles a chatbot turn with the user, maintaining conversation context and loan details.
     """
-    client = get_ai_client(provider, api_key)
+    client = get_ai_client(api_key)
     currency = loan_data.get("currency", "₹")
     loan_type = loan_data.get("loan_type", "Custom Loan")
     
@@ -213,7 +217,7 @@ def chat_with_coach(chat_history, user_message, loan_data, base_details, health_
         elif "refinance" in q:
             return f"Refinancing rate simulation is set at {loan_data.get('refinance_rate', 0.0)}%. That rate would save you {currency}{loan_data.get('refinance_net_savings', 0.0):,.2f} net of fees. Focus on refinance if the interest rate differential is at least 0.5% - 1%."
         else:
-            return f"I'd love to analyze this in detail! Please select a valid AI provider (such as Gemini Free) and enter your key in the sidebar. Based on your current dashboard, your Loan Health Score is {health_score}/100 ({score_status}), and you have an extra monthly prepayment capacity of {currency}{loan_data['extra_monthly_budget']:,.2f}."
+            return f"I'd love to analyze this in detail! Please enter your Groq API key in the sidebar. Based on your current dashboard, your Loan Health Score is {health_score}/100 ({score_status}), and you have an extra monthly prepayment capacity of {currency}{loan_data['extra_monthly_budget']:,.2f}."
 
     system_prompt = f"""You are the "EMI Sense AI Coach", a friendly, highly intelligent financial assistant.
 You are helping the user optimize their {loan_type}.
@@ -254,5 +258,6 @@ PRE-CALCULATED SIMULATION RESULTS:
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"*(AI Connection Error - I couldn't reach the provider. Let me help you locally:)* \n\n" + f"Based on your loan details, your rate is {loan_data['interest_rate']}% and your health score is {health_score}/100. Let me know if you want details on your EMI increase or lump sum prepayments!"
-
+        error_msg = str(e)
+        print(f"AI Coach error: {error_msg}")
+        return f"*(AI Connection Error ({error_msg}) - I couldn't reach the provider. Let me help you locally:)* \n\n" + f"Based on your loan details, your rate is {loan_data['interest_rate']}% and your health score is {health_score}/100. Let me know if you want details on your EMI increase or lump sum prepayments!"

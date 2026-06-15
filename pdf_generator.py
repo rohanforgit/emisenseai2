@@ -1,23 +1,22 @@
 import io
-import re
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak, KeepTogether
 )
 from reportlab.lib.units import inch
 import charts
 
 def generate_pdf_report(loan_data, base_details, sim_emi, sim_annual, sim_lump, combined_sim, refinance, health_score, health_status, score_deductions, alerts, ai_recommendations):
     """
-    Generates a professional PDF report containing baseline stats, health metrics, 
-    comparison of prepayments, static charts, and AI advisor notes.
+    Creates a professional PDF report using ReportLab.
+    Returns the PDF file contents as a bytes object.
     """
     buffer = io.BytesIO()
     
-    # 0.5 inch margins (36 points) for a modern, content-dense look
+    # Page setup - 0.5 inch margins for data-rich layouts
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=letter,
@@ -29,32 +28,35 @@ def generate_pdf_report(loan_data, base_details, sim_emi, sim_annual, sim_lump, 
     
     styles = getSampleStyleSheet()
     
-    # Professional, high-contrast color scheme for print
-    primary_blue = colors.HexColor('#1E3A8A')  # Classic navy for header styling
-    slate_border = colors.HexColor('#CBD5E1')
-    bg_light_row = colors.HexColor('#F8FAFC')
-    danger_red = colors.HexColor('#DC2626')
-    warning_orange = colors.HexColor('#D97706')
-    info_blue = colors.HexColor('#2563EB')
+    # Custom Palette to match UI
+    bg_dark = colors.HexColor('#0F172A')
+    panel_dark = colors.HexColor('#1E293B')
+    accent_blue = colors.HexColor('#3B82F6')
+    text_white = colors.HexColor('#F8FAFC')
+    text_slate = colors.HexColor('#94A3B8')
+    gold_savings = colors.HexColor('#EAB308')
+    success_green = colors.HexColor('#10B981')
+    warning_orange = colors.HexColor('#F59E0B')
+    danger_red = colors.HexColor('#EF4444')
     
-    # Typography Styles
+    # Custom Typography Styles
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
         fontName='Helvetica-Bold',
-        fontSize=22,
-        textColor=primary_blue,
-        spaceAfter=2,
-        alignment=0
+        fontSize=24,
+        textColor=accent_blue,
+        spaceAfter=4,
+        alignment=0 # Left align
     )
     
     subtitle_style = ParagraphStyle(
         'DocSubTitle',
         parent=styles['Normal'],
         fontName='Helvetica-Oblique',
-        fontSize=11,
-        textColor=colors.HexColor('#475569'),
-        spaceAfter=12,
+        fontSize=12,
+        textColor=text_slate,
+        spaceAfter=15,
         alignment=0
     )
     
@@ -62,23 +64,25 @@ def generate_pdf_report(loan_data, base_details, sim_emi, sim_annual, sim_lump, 
         'SectionHeading',
         parent=styles['Heading2'],
         fontName='Helvetica-Bold',
-        fontSize=13,
-        textColor=colors.white,
-        spaceBefore=12,
-        spaceAfter=6,
-        backColor=primary_blue,
+        fontSize=14,
+        textColor=accent_blue,
+        spaceBefore=15,
+        spaceAfter=8,
+        borderColor=accent_blue,
+        borderWidth=1,
+        borderRadius=4,
         borderPadding=5,
-        borderRadius=3
+        backColor=colors.HexColor('#172554') # Deep navy background for headers
     )
     
     body_style = ParagraphStyle(
-        'BodyTextDark',
+        'BodyTextWhite',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=9.5,
-        textColor=colors.HexColor('#1E293B'),
-        spaceBefore=3,
-        spaceAfter=3
+        fontSize=10,
+        textColor=colors.HexColor('#334155'), # Dark text for white paper print
+        spaceBefore=4,
+        spaceAfter=4
     )
     
     body_bold = ParagraphStyle(
@@ -87,127 +91,129 @@ def generate_pdf_report(loan_data, base_details, sim_emi, sim_annual, sim_lump, 
         fontName='Helvetica-Bold'
     )
     
+    alert_style = ParagraphStyle(
+        'AlertText',
+        parent=body_style,
+        fontSize=9,
+        textColor=colors.HexColor('#7F1D1D') # Deep red for warning block print
+    )
+    
     story = []
     
-    # --- REPORT HEADER ---
+    # --- HEADER SECTION ---
     story.append(Paragraph("EMI Sense AI", title_style))
-    story.append(Paragraph("Financial Report & Custom Loan Optimization Plan", subtitle_style))
-    story.append(Paragraph(f"Generated On: {datetime.now().strftime('%d %B %Y, %I:%M %p')}", body_style))
+    story.append(Paragraph("AI-Powered Loan Optimization & Financial Advisor Report", subtitle_style))
+    story.append(Paragraph(f"Report Generated On: {datetime.now().strftime('%d %B %Y, %I:%M %p')}", body_style))
     story.append(Spacer(1, 10))
     
-    # --- GENERAL EXECUTIVE SUMMARY ---
+    # --- EXECUTIVE SUMMARY CARD ---
     currency = loan_data.get("currency", "₹")
     loan_type = loan_data.get("loan_type", "Custom Loan")
     
     summary_text = (
-        f"This advisory report is prepared specifically for your <b>{loan_type}</b>. "
-        f"Using standard mathematical compound interest modeling combined with strategic prepayment paths, "
-        f"the report details how you can minimize interest, optimize cash flows, and accelerate your debt-free target."
+        f"This report outlines optimization strategies for your <b>{loan_type}</b>. "
+        f"By implementing the recommended prepayment plans, you can significantly reduce "
+        f"your total interest payment and shorten your debt timeline."
     )
     story.append(Paragraph(summary_text, body_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 15))
     
-    # --- BASELINE VS OPTIMIZED LOAN SUMMARY TABLE ---
-    story.append(Paragraph("1. Loan Structure & Optimization Comparison", h1_style))
+    # --- LOAN OVERVIEW TABLE ---
+    story.append(Paragraph("1. Baseline Loan Summary", h1_style))
     
-    total_interest_opt = sum(m["interest"] for m in combined_sim)
-    total_savings_opt = base_details["total_interest"] - total_interest_opt
-    years_saved_opt = (base_details["actual_tenure_months"] - len(combined_sim)) / 12.0
-    
-    summary_table_data = [
-        [
-            Paragraph("<b>Core Parameter</b>", body_bold), 
-            Paragraph("<b>Baseline Loan</b>", body_bold), 
-            Paragraph("<b>Optimized Strategy</b>", body_bold), 
-            Paragraph("<b>Expected Savings</b>", body_bold)
-        ],
-        ["Loan Type", loan_type, "Combined Plan", "-"],
-        ["Principal Borrowed", f"{currency}{loan_data['loan_amount']:,.2f}", f"{currency}{loan_data['loan_amount']:,.2f}", "-"],
-        ["Annual Rate", f"{loan_data['interest_rate']}%", f"{loan_data['interest_rate']}%", "-"],
-        ["Monthly EMI", f"{currency}{base_details['emi']:,.2f}", f"{currency}{(base_details['emi'] + loan_data.get('extra_monthly_budget', 0.0)):,.2f}", f"Extra budget: {currency}{loan_data.get('extra_monthly_budget', 0.0):,.2f}/mo"],
-        ["Total Interest", f"{currency}{base_details['total_interest']:,.2f}", f"{currency}{total_interest_opt:,.2f}", f"Saved: {currency}{total_savings_opt:,.2f}"],
-        ["Total Payment", f"{currency}{base_details['total_payment']:,.2f}", f"{currency}{(loan_data['loan_amount'] + total_interest_opt):,.2f}", f"Saved: {currency}{total_savings_opt:,.2f}"],
-        ["Loan Tenure", f"{base_details['actual_tenure_months']} months", f"{len(combined_sim)} months", f"Saved: {years_saved_opt:.1f} years"]
+    table_data = [
+        [Paragraph("<b>Financial Metric</b>", body_bold), Paragraph("<b>Value</b>", body_bold), Paragraph("<b>Optimized Metric</b>", body_bold), Paragraph("<b>Value</b>", body_bold)],
+        ["Loan Type", loan_type, "Recommended Prepayment", f"{currency}{loan_data.get('extra_monthly_budget', 0.0):,.2f} / mo"],
+        ["Principal Borrowed", f"{currency}{loan_data['loan_amount']:,.2f}", "New Adjusted EMI", f"{currency}{(base_details['emi'] + loan_data.get('extra_monthly_budget', 0.0)):,.2f}"],
+        ["Interest Rate", f"{loan_data['interest_rate']}%", "Original Tenure", f"{loan_data['loan_tenure_months']} months"],
+        ["Monthly EMI", f"{currency}{base_details['emi']:,.2f}", "New Optimized Tenure", f"{len(combined_sim)} months"],
+        ["Total Interest Payable", f"{currency}{base_details['total_interest']:,.2f}", "Optimized Interest Payable", f"{currency}{sum(m['interest'] for m in combined_sim):,.2f}"],
+        ["Total Amount Payable", f"{currency}{base_details['total_payment']:,.2f}", "Total Interest Saved", f"{currency}{(base_details['total_interest'] - sum(m['interest'] for m in combined_sim)):,.2f}"],
+        ["Interest Contribution %", f"{base_details['interest_percentage']}%", "Years Saved", f"{round((base_details['actual_tenure_months'] - len(combined_sim))/12.0, 1)} years"]
     ]
     
-    t1 = Table(summary_table_data, colWidths=[2.1*inch, 1.6*inch, 1.8*inch, 1.9*inch])
+    t1 = Table(table_data, colWidths=[2.0*inch, 1.5*inch, 2.3*inch, 1.5*inch])
     t1.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
-        ('GRID', (0,0), (-1,-1), 0.5, slate_border),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor('#1E293B')),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BACKGROUND', (0,1), (-1,-1), bg_light_row),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F8FAFC')),
     ]))
     story.append(t1)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 15))
     
-    # --- FINANCIAL HEALTH & SECURITY MATRIX ---
-    story.append(Paragraph("2. Financial Health Score & Risk Flags", h1_style))
-    
+    # --- LOAN HEALTH & FINANCIAL SECURITY ---
+    story.append(Paragraph("2. Financial Health & Security Analysis", h1_style))
     health_text = (
-        f"Your custom <b>Loan Health Score is {health_score}/100</b>, placing you in the <b>{health_status}</b> tier.<br/>"
-        f"Your Debt Ratio (EMI to Income) is <b>{loan_data['emi_ratio']}%</b>. A healthy target is typically under 30%."
+        f"Your Loan Health Score is <b>{health_score}/100</b>, classifying the debt structure as <b>{health_status}</b>.<br/>"
+        f"Your EMI consumes <b>{loan_data['emi_ratio']}%</b> of your monthly income (Recommended threshold is &lt; 30%)."
     )
     story.append(Paragraph(health_text, body_style))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 10))
     
+    # Warnings table if any exist
     if alerts:
-        alert_rows = [[Paragraph("<b>Severity</b>", body_bold), Paragraph("<b>Warning / Opportunity Alert Description</b>", body_bold)]]
+        alert_rows = [[Paragraph("<b>Severity</b>", body_bold), Paragraph("<b>Warning / Recommendation Alert</b>", body_bold)]]
         for a in alerts:
             sev = a["type"].upper()
-            sev_color = danger_red if sev == "DANGER" else warning_orange if sev == "WARNING" else info_blue
+            sev_color = danger_red if sev == "DANGER" else warning_orange if sev == "WARNING" else accent_blue
             alert_rows.append([
                 Paragraph(f"<font color='{sev_color}'><b>{sev}</b></font>", body_bold),
                 Paragraph(a["message"], body_style)
             ])
             
-        t_alerts = Table(alert_rows, colWidths=[1.1*inch, 6.3*inch])
+        t_alerts = Table(alert_rows, colWidths=[1.2*inch, 6.1*inch])
         t_alerts.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FEE2E2')),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FFE4E6')),
             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#FECDD3')),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#FFF5F5')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#FFF1F2')),
         ]))
         story.append(t_alerts)
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 15))
         
-    story.append(PageBreak())  # Align visual charts to the top of page 2
+    story.append(PageBreak()) # Move to next page for charts and optimization details
     
-    # --- STATIC CHARTS SECTION ---
-    story.append(Paragraph("3. Visual Amortization & Portfolio Balance Timelines", h1_style))
+    # --- CHARTS SECTION ---
+    story.append(Paragraph("3. Optimization Charts & Visualization", h1_style))
     
+    # Render static charts using Matplotlib
     pie_bytes = charts.generate_static_pie_chart(loan_data['loan_amount'], base_details['total_interest'])
     timeline_bytes = charts.generate_static_timeline_chart(base_details['schedule'], combined_sim)
     
-    img_pie = Image(io.BytesIO(pie_bytes), width=3.3*inch, height=2.1*inch)
-    img_time = Image(io.BytesIO(timeline_bytes), width=4.0*inch, height=2.1*inch)
+    img_pie = Image(io.BytesIO(pie_bytes), width=3.3*inch, height=2.2*inch)
+    img_time = Image(io.BytesIO(timeline_bytes), width=4.0*inch, height=2.2*inch)
     
-    chart_layout_table = Table([[img_pie, img_time]], colWidths=[3.4*inch, 4.0*inch])
-    chart_layout_table.setStyle(TableStyle([
+    # Place side by side in a layout table
+    chart_table = Table([[img_pie, img_time]], colWidths=[3.4*inch, 4.0*inch])
+    chart_table.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('LEFTPADDING', (0,0), (-1,-1), 0),
         ('RIGHTPADDING', (0,0), (-1,-1), 0),
     ]))
-    story.append(chart_layout_table)
-    story.append(Spacer(1, 10))
     
-    # --- OPTIMIZATION SIMULATION COMPARISONS TABLE ---
-    story.append(Paragraph("4. Breakdown of Prepayment Scenarios", h1_style))
+    story.append(chart_table)
+    story.append(Spacer(1, 15))
+    
+    # --- OPTIMIZATION SIMULATION COMPARISONS ---
+    story.append(Paragraph("4. Optimization Simulations Comparison", h1_style))
     
     opt_table_data = [
         [
-            Paragraph("<b>Scenario Run</b>", body_bold),
+            Paragraph("<b>Optimization Strategy</b>", body_bold),
             Paragraph("<b>New EMI</b>", body_bold),
-            Paragraph("<b>Tenure (Months)</b>", body_bold),
+            Paragraph("<b>Tenure (Mo)</b>", body_bold),
             Paragraph("<b>Interest Saved</b>", body_bold),
             Paragraph("<b>Years Saved</b>", body_bold)
         ],
         [
-            "Baseline Plan", 
+            "Baseline Loan Schedule", 
             f"{currency}{base_details['emi']:,.2f}", 
             f"{base_details['actual_tenure_months']}", 
             "-", 
@@ -221,99 +227,104 @@ def generate_pdf_report(loan_data, base_details, sim_emi, sim_annual, sim_lump, 
             f"{sim_emi['years_saved']} yrs"
         ],
         [
-            "Annual Prepayment Schedule", 
+            f"Annual Prepayment", 
             f"{currency}{base_details['emi']:,.2f}", 
             f"{sim_annual['new_tenure_months']}", 
             f"{currency}{sim_annual['interest_saved']:,.2f}", 
             f"{sim_annual['years_saved']} yrs"
         ],
         [
-            "Lump Sum Prepayment", 
+            f"One-Time Lump Sum Payment", 
             f"{currency}{sim_lump['new_emi']:,.2f}", 
             f"{sim_lump['new_tenure_months']}", 
             f"{currency}{sim_lump['interest_saved']:,.2f}", 
             f"{sim_lump['years_saved']} yrs"
         ],
         [
-            "Combined Strategy (All Options)",
+            "Combined Strategy (All Above)",
             f"{currency}{(base_details['emi'] + loan_data.get('extra_monthly_budget', 0.0)):,.2f}",
             f"{len(combined_sim)}",
-            f"{currency}{total_savings_opt:,.2f}",
-            f"{years_saved_opt:.1f} yrs"
+            f"{currency}{(base_details['total_interest'] - sum(m['interest'] for m in combined_sim)):,.2f}",
+            f"{round((base_details['actual_tenure_months'] - len(combined_sim))/12.0, 1)} yrs"
         ]
     ]
     
-    t_opt = Table(opt_table_data, colWidths=[2.2*inch, 1.2*inch, 1.2*inch, 1.5*inch, 1.3*inch])
+    t_opt = Table(opt_table_data, colWidths=[2.3*inch, 1.2*inch, 1.1*inch, 1.5*inch, 1.2*inch])
     t_opt.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
-        ('GRID', (0,0), (-1,-1), 0.5, slate_border),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
         ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BACKGROUND', (0,1), (-1,-2), bg_light_row),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#FEF08A')),  # Highlight optimized row in yellow
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BACKGROUND', (0,1), (-1,-2), colors.HexColor('#F8FAFC')),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#FEF08A')), # Highlight combined row in gold
     ]))
     story.append(t_opt)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 15))
     
-    # --- REFINANCING ASSESSMENTS ---
+    # --- REFINANCING ANALYSIS ---
     if refinance:
-        story.append(Paragraph("5. Balance Transfer & Refinance Assessment", h1_style))
+        story.append(Paragraph("5. Refinancing Viability Assessment", h1_style))
         ref_status = "RECOMMENDED" if refinance["worth_refinancing"] else "NOT RECOMMENDED"
-        ref_color = colors.HexColor('#16A34A') if refinance["worth_refinancing"] else danger_red
+        ref_color = success_green if refinance["worth_refinancing"] else danger_red
         
         ref_text = (
-            f"Refinance target simulation set at interest rate <b>{loan_data.get('refinance_rate', 0.0)}%</b> with closing/transfer fees of <b>{currency}{loan_data.get('refinance_cost', 0):,.2f}</b>:<br/>"
-            f"Transfer Decision: <b><font color='{ref_color}'>{ref_status}</font></b><br/>"
+            f"Analysis of balance transfer to rate <b>{loan_data.get('refinance_rate', 0.0)}%</b> with costs <b>{currency}{loan_data.get('refinance_cost', 0):,.2f}</b>:<br/>"
+            f"Status: <b><font color='{ref_color}'>{ref_status}</font></b><br/>"
             f"Monthly EMI reduction: <b>{currency}{refinance['monthly_saving']:,.2f}</b><br/>"
             f"Gross interest savings over tenure: <b>{currency}{refinance['gross_interest_saved']:,.2f}</b><br/>"
-            f"Net financial savings (after transfer fees): <b>{currency}{refinance['net_savings']:,.2f}</b><br/>"
-            f"Break-even timeline: <b>{refinance['break_even_months']} months</b>"
+            f"Net savings (after fees): <b>{currency}{refinance['net_savings']:,.2f}</b><br/>"
+            f"Break-even point: <b>{refinance['break_even_months']} months</b>"
         )
         story.append(Paragraph(ref_text, body_style))
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 15))
         
     story.append(PageBreak())
     
-    # --- AI ADVISOR RECOMMENDATIONS & ACTIONS ---
-    story.append(Paragraph("6. AI Recommendations & Strategic Action Plan", h1_style))
+    # --- AI ADVICE & PERSONALIZED RECOMMENDATIONS ---
+    story.append(Paragraph("6. AI Personalized Recommendations & Action Plan", h1_style))
     
-    # Escape XML characters for ReportLab compatibility
-    clean_ai = ai_recommendations.replace("&", "&amp;")
+    import re
+    # Escape XML special characters
+    clean_ai_recs = ai_recommendations.replace("&", "&amp;")
     
-    # Convert markdown patterns to HTML tags supported by ReportLab Paragraphs
-    clean_ai = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_ai)
-    clean_ai = re.sub(r'### (.*?)(?:\n|$)', r'<b>\1</b><br/>', clean_ai)
-    clean_ai = re.sub(r'## (.*?)(?:\n|$)', r'<b>\1</b><br/>', clean_ai)
+    # Properly map markdown bold to matching ReportLab HTML bold tags
+    clean_ai_recs = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_ai_recs)
     
-    # Swap out complex emojis that standard PDF fonts can't render
-    emoji_swap = {
+    # Map markdown headers
+    clean_ai_recs = re.sub(r'### (.*?)(?:\n|$)', r'<b>\1</b><br/>', clean_ai_recs)
+    clean_ai_recs = re.sub(r'## (.*?)(?:\n|$)', r'<b>\1</b><br/>', clean_ai_recs)
+    
+    # Replace emoji characters that standard PDF Helvetica font does not support
+    emoji_replacements = {
         "💡": "*", "🏆": "*", "✅": "*", "🚨": "*", "⚠️": "*",
         "🥇": "1.", "🥈": "2.", "🥉": "3.", "💵": "INR", "📊": "Analysis:"
     }
-    for emo, rep in emoji_swap.items():
-        clean_ai = clean_ai.replace(emo, rep)
+    for emo, rep in emoji_replacements.items():
+        clean_ai_recs = clean_ai_recs.replace(emo, rep)
         
-    clean_ai = clean_ai.replace("\n", "<br/>")
+    # Convert remaining newlines to breaks
+    clean_ai_recs = clean_ai_recs.replace("\n", "<br/>")
     
-    story.append(Paragraph(clean_ai, body_style))
-    story.append(Spacer(1, 15))
+    # Wrap in KeepTogether to ensure it doesn't break awkwardly
+    story.append(Paragraph(clean_ai_recs, body_style))
+    story.append(Spacer(1, 20))
     
-    # --- DISCLAIMERS ---
+    # --- DISCLAIMER ---
     disclaimer_style = ParagraphStyle(
-        'DisclaimerStyle',
+        'Disclaimer',
         parent=styles['Normal'],
         fontName='Helvetica-Oblique',
-        fontSize=7.5,
-        textColor=colors.HexColor('#64748B'),
-        alignment=1
+        fontSize=8,
+        textColor=text_slate,
+        alignment=1 # Center align
     )
-    story.append(Spacer(1, 5))
-    story.append(Paragraph("Disclaimer: This financial optimization report is constructed using mathematical compound amortization models and AI logic. It is generated for educational and advisory purposes and does not constitute certified legal or financial investment planning. Consult a professional advisor before executing prepayments or balance transfers.", disclaimer_style))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Disclaimer: This report is generated based on mathematical loan compounding models and AI heuristics. It is meant for educational and advisory purposes and does not constitute official legal or financial advice. Consult a certified financial planner before finalizing prepayment transfers.", disclaimer_style))
     
-    # Build the document template
+    # Build Document
     doc.build(story)
     
-    pdf_contents = buffer.getvalue()
+    pdf_data = buffer.getvalue()
     buffer.close()
-    return pdf_contents
+    return pdf_data
