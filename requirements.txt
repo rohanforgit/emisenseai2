@@ -1,9 +1,7 @@
+streamlit
 pandas
+numpy
 plotly
 matplotlib
 reportlab
 openai
-streamlit
-requests
-huggingface_hub==0.22.2
-pydantic==2.10.6
